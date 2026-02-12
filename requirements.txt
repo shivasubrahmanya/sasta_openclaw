@@ -1,0 +1,8 @@
+google-generativeai
+flask
+pydantic
+schedule
+python-telegram-bot
+chromadb
+python-dotenv
+requests
