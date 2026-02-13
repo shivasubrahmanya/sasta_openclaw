@@ -1,8 +1,7 @@
-google-generativeai
+google-genai
+ollama
+python-telegram-bot[httpx]
 flask
+python-dotenv
 pydantic
 schedule
-python-telegram-bot
-chromadb
-python-dotenv
-requests

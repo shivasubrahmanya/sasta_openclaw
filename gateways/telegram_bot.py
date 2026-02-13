@@ -47,12 +47,18 @@ class TelegramGateway(Gateway):
         self.thread.start()
         print("Telegram Gateway thread started.")
 
+
+    def stop(self):
+        self.running = False
+        print("Telegram Gateway stopping...")
+
     async def _async_run(self):
         """Manually manage the application lifecycle for full control."""
         max_retries = 5
         retry_count = 0
+        self.running = True
         
-        while retry_count < max_retries:
+        while retry_count < max_retries and self.running:
             app = None
             try:
                 # Build application with generous timeouts
@@ -95,8 +101,18 @@ class TelegramGateway(Gateway):
                 print("Telegram: Polling for messages...")
                 
                 # Keep running until interrupted
-                while True:
+                while self.running:
                     await asyncio.sleep(1)
+                
+                # Clean shutdown when self.running becomes False
+                print("Telegram: Stopping loop...")
+                if app.updater.running:
+                    await app.updater.stop()
+                if app.running:
+                    await app.stop()
+                await app.shutdown()
+                print("Telegram: Shutdown complete.")
+                break
                     
             except asyncio.CancelledError:
                 print("Telegram: Shutting down...")
@@ -105,19 +121,20 @@ class TelegramGateway(Gateway):
                 retry_count += 1
                 wait_time = min(10 * retry_count, 60)
                 print(f"Telegram Gateway Error (attempt {retry_count}/{max_retries}): {e}")
-                if retry_count < max_retries:
+                if retry_count < max_retries and self.running:
                     print(f"Retrying in {wait_time} seconds...")
                     await asyncio.sleep(wait_time)
                 else:
-                    print("Telegram Gateway: Max retries reached. Telegram bot is disabled.")
+                    print("Telegram Gateway: Max retries reached or stopped. Telegram bot is disabled.")
                     print("The HTTP Gateway is still running and functional.")
             finally:
-                if app:
+                if app and self.running: # Only force cleanup if we crashed out of the loop unexpectedly
                     try:
                         if app.updater and app.updater.running:
                             await app.updater.stop()
                         if app.running:
                             await app.stop()
+
                         await app.shutdown()
                     except Exception:
                         pass
@@ -133,6 +150,4 @@ class TelegramGateway(Gateway):
         finally:
             loop.close()
 
-    def stop(self):
-        pass
 

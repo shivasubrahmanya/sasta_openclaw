@@ -21,12 +21,13 @@ class Session(BaseModel):
         return msg
 
     def to_gemini_history(self):
-        # Maps internal role 'assistant' to Gemini's 'model' if needed, though Gemini uses 'model'
-        # The API usually expects 'user' and 'model'.
+        from google.genai import types
         gemini_history = []
         for m in self.history:
             role = "model" if m.role == "assistant" else m.role
-            gemini_history.append({"role": role, "parts": [m.content]})
+            gemini_history.append(
+                types.Content(role=role, parts=[types.Part(text=m.content)])
+            )
         return gemini_history
 
 class SessionStore:

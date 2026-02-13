@@ -7,14 +7,18 @@ load_dotenv()
 class Config:
     # Gemini Configuration
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-    if not GOOGLE_API_KEY:
-        raise ValueError("GOOGLE_API_KEY not found in environment variables. Please set it in .env file.")
+    # if not GOOGLE_API_KEY:
+    #     print("Warning: GOOGLE_API_KEY not found. Gemini models will not work.")
     
     # Model Configuration
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
     # Telegram Configuration
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+    # Ollama Configuration
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
 
     # Gateway Configuration
     GATEWAY_HOST = os.getenv("GATEWAY_HOST", "0.0.0.0")
