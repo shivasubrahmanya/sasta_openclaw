@@ -23,10 +23,21 @@ class TelegramGateway(Gateway):
         user_id = str(update.effective_user.id)
         text = update.message.text
         
+        # Send "thinking" indicator for long operations
+        thinking_msg = await update.message.reply_text("⏳ Processing...")
+        
         loop = asyncio.get_running_loop()
         try:
             response = await loop.run_in_executor(None, self.on_message, user_id, text)
+            
+            # Delete the thinking message
+            try:
+                await thinking_msg.delete()
+            except:
+                pass
+            
             if response:
+                # Telegram has a 4096 char limit per message
                 if len(response) > 4000:
                     for i in range(0, len(response), 4000):
                         await update.message.reply_text(response[i:i+4000])
@@ -36,8 +47,14 @@ class TelegramGateway(Gateway):
                  await update.message.reply_text("[No response from agent]")
         except Exception as e:
             print(f"Error handling telegram message: {e}")
+            import traceback
+            traceback.print_exc()
             try:
-                await update.message.reply_text(f"Error: {str(e)}")
+                await thinking_msg.delete()
+            except:
+                pass
+            try:
+                await update.message.reply_text(f"Error: {str(e)[:500]}")
             except Exception:
                 pass
 
@@ -64,16 +81,16 @@ class TelegramGateway(Gateway):
                 # Build application with generous timeouts
                 # IMPORTANT: Only use .request() OR individual timeout methods, not both
                 request = HTTPXRequest(
-                    connect_timeout=60.0,
-                    read_timeout=60.0,
-                    write_timeout=60.0,
-                    pool_timeout=60.0,
+                    connect_timeout=120.0,
+                    read_timeout=600.0,
+                    write_timeout=600.0,
+                    pool_timeout=120.0,
                 )
                 get_updates_request = HTTPXRequest(
-                    connect_timeout=60.0,
-                    read_timeout=60.0,
-                    write_timeout=60.0,
-                    pool_timeout=60.0,
+                    connect_timeout=120.0,
+                    read_timeout=600.0,
+                    write_timeout=600.0,
+                    pool_timeout=120.0,
                 )
                 
                 app = (

@@ -64,8 +64,10 @@ class OllamaClient:
     def send_message(self, session: Session, content: str) -> str:
         """
         Sends a message to Ollama within the context of a session.
-        Handles history conversion, tool calls, and response processing.
+        Handles history conversion, multi-round tool calls, and response processing.
         """
+        
+        MAX_TOOL_ROUNDS = 3  # Prevent infinite tool call loops
         
         # 1. Prepare history for Ollama
         messages = []
@@ -75,81 +77,99 @@ class OllamaClient:
             messages.append({"role": "system", "content": self.system_instruction})
             
         # Convert session history
-        # Session history contains objects with .role and .content
         for msg in session.history:
             role = msg.role
-            if role == "model": role = "assistant" # Remap if needed
+            if role == "model": role = "assistant"
             messages.append({"role": role, "content": msg.content})
-            
-        # Add the current user message (which is passed as 'content' arg, 
-        # but might also be in session history depending on how Agent calls this.
-        # The Agent ADDS the user message to session BEFORE calling this.
-        # So 'session.history' ALREADY contains the last user message.
-        # We don't need to append 'content' again if it's already in history.
         
-        # 2. Call Ollama
+        # 2. Call Ollama with tool call loop
         try:
-            response = ollama.chat(
-                model=self.model_name,
-                messages=messages,
-                tools=self.tools
-            )
+            round_num = 0
             
-            response_msg = response['message']
-            response_content = response_msg.get('content', '')
-            tool_calls = response_msg.get('tool_calls', [])
-
-            # 3. Handle Tool Calls
-            if tool_calls:
-                # If tools are called, we execute them and send results back
+            while round_num <= MAX_TOOL_ROUNDS:
+                # Decide whether to offer tools this round
+                # On the last round, don't offer tools to force a text response
+                use_tools = self.tools if round_num < MAX_TOOL_ROUNDS else None
                 
-                # First, add the assistant's request-to-call-tool to history
-                # For Ollama chat, we usually just continue the conversation
+                print(f"DEBUG: Calling Ollama (round {round_num + 1}/{MAX_TOOL_ROUNDS + 1}, tools={'yes' if use_tools else 'no'})...")
+                
+                import time as _time
+                _start = _time.time()
+                response = ollama.chat(
+                    model=self.model_name,
+                    messages=messages,
+                    tools=use_tools
+                )
+                _elapsed = _time.time() - _start
+                
+                response_msg = response['message']
+                response_content = response_msg.get('content', '') or ''
+                tool_calls = response_msg.get('tool_calls', []) or []
+                
+                print(f"DEBUG: Ollama responded in {_elapsed:.1f}s — content={len(response_content)} chars, tool_calls={len(tool_calls)}")
+
+                # If no tool calls, we have our final answer
+                if not tool_calls:
+                    final_content = response_content or "I processed the request but have no additional response."
+                    print(f"DEBUG: Final response: {final_content[:200]}...")
+                    session.add_message(role="assistant", content=final_content)
+                    return final_content
+
+                # Execute tool calls
                 messages.append(response_msg)
                 
-                # Execute tools
                 for tool in tool_calls:
                     function_name = tool['function']['name']
                     arguments = tool['function']['arguments']
                     
-                    print(f"DEBUG: Tool Call: {function_name}({arguments})")
+                    print(f"DEBUG: Tool Call (round {round_num + 1}): {function_name}({arguments})")
                     
                     func = registry.get_tool(function_name)
                     if func:
                         try:
-                            # Arguments come as a dict, we unpack them
                             result = func(**arguments)
                         except Exception as e:
                             result = f"Error executing tool {function_name}: {e}"
                     else:
                         result = f"Error: Tool {function_name} not found."
-                        
-                    # Add tool result to history
+                    
+                    # Truncate large tool results to prevent Ollama from choking
+                    result_str = str(result)
+                    if len(result_str) > 4000:
+                        print(f"DEBUG: Truncating tool result from {len(result_str)} to 4000 chars")
+                        result_str = result_str[:4000] + "\n\n[... truncated for length. Present the above results to the user.]"
+                    
                     messages.append({
                         "role": "tool",
-                        "content": str(result),
-                        # Some implementations might need name/tool_call_id
+                        "content": result_str,
                     })
-                    
-                # 4. Get final response after tool execution
-                final_response = ollama.chat(
-                    model=self.model_name,
-                    messages=messages,
-                    # We don't verify if we should pass tools again for multi-step, 
-                    # but usually yes for chained tools. Llama 3 is good at one-shot.
-                    tools=self.tools 
-                )
-                final_content = final_response['message']['content']
                 
-                # Update Session with the FINAL answer provided to user
-                session.add_message(role="assistant", content=final_content)
-                return final_content
-
-            else:
-                # No tools called, just a normal response
-                session.add_message(role="assistant", content=response_content)
-                return response_content
+                round_num += 1
             
+            # If we exhausted all rounds, force a text-only final call
+            print(f"DEBUG: Max tool rounds exhausted, forcing text-only response...")
+            messages.append({
+                "role": "system",
+                "content": "You must now respond to the user with the information gathered. Do not call any more tools."
+            })
+            
+            final_response = ollama.chat(
+                model=self.model_name,
+                messages=messages
+                # No tools parameter = model can only respond with text
+            )
+            final_content = final_response['message'].get('content', '')
+            print(f"DEBUG: Forced final response: {len(final_content)} chars")
+            
+            if not final_content:
+                # Last resort: synthesize from tool results
+                tool_results = [m['content'] for m in messages if m.get('role') == 'tool']
+                final_content = "\n\n".join(tool_results[-2:]) if tool_results else "I processed the request but couldn't generate a summary."
+                print(f"DEBUG: Using last-resort tool result passthrough ({len(final_content)} chars)")
+            
+            session.add_message(role="assistant", content=final_content)
+            return final_content
+
         except Exception as e:
             error_msg = f"Error communicating with Ollama: {e}"
             print(error_msg)

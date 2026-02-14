@@ -603,3 +603,71 @@ def webmcp_list_cached_tools() -> str:
         return "\n".join(lines)
     except Exception as e:
         return f"Error listing cached tools: {e}"
+
+
+# ==================== LEAD DISCOVERY TOOLS ====================
+
+# Global Lead Discovery client instance (injected from main.py)
+_lead_discovery_client = None
+
+def set_lead_discovery_client(client):
+    global _lead_discovery_client
+    _lead_discovery_client = client
+
+
+@registry.register
+def lead_discovery_search(query: str) -> str:
+    """
+    Searches for B2B leads using the Lead Discovery Agent. Opens the dashboard
+    in a visible browser, runs the full pipeline, and returns results.
+    
+    Pipeline: Discovery → Structure → Roles → Enrichment → Verification.
+    
+    Use this for queries like:
+    - 'startups in Bangalore'
+    - 'AI companies in San Francisco'
+    - 'Google' (single company analysis)
+    - 'find product managers at Microsoft'
+    
+    WARNING: This can take 2-5 minutes as it runs a deep analysis pipeline.
+    The dashboard will open visibly on the laptop for demo.
+    
+    Args:
+        query: The search query - company name, industry search, or role-based search.
+    """
+    if not _lead_discovery_client:
+        return "Lead Discovery is not enabled. Set LEAD_DISCOVERY_ENABLED=true in .env and ensure the server is running."
+    
+    try:
+        print(f"[Lead Discovery] Starting pipeline for: {query}")
+        print(f"[Lead Discovery] Dashboard: {_lead_discovery_client.dashboard_url}")
+        print(f"[Lead Discovery] This may take several minutes...")
+        
+        # Opens visible browser, types query, waits for results, scrapes them
+        result = _lead_discovery_client.analyze(query)
+        
+        # Add instruction so the model sends this to the user instead of calling more tools
+        return (
+            "[INSTRUCTION: Send the following lead discovery results directly to the user. "
+            "Do NOT call any more tools. Just format and present these results nicely.]\n\n"
+            + result
+        )
+        
+    except Exception as e:
+        return f"Error running lead discovery: {e}"
+
+
+@registry.register
+def lead_discovery_open_dashboard() -> str:
+    """
+    Opens the B2B Lead Discovery web dashboard in the browser for visual demo.
+    Use this when the user wants to see the Lead Discovery UI or interact with it visually.
+    """
+    if _lead_discovery_client:
+        return _lead_discovery_client.open_dashboard()
+    
+    import webbrowser
+    webbrowser.open("https://agent-three-eta.vercel.app/")
+    return "Opened Lead Discovery Dashboard at https://agent-three-eta.vercel.app/"
+
+

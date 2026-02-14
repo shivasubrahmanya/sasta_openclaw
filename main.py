@@ -8,7 +8,7 @@ from core.ollama_client import OllamaClient
 from core.memory import MemoryStore
 from core.agent import GeminiAgent
 from core.scheduler import Scheduler
-from core.tools import set_memory_store, set_webmcp_client
+from core.tools import set_memory_store, set_webmcp_client, set_lead_discovery_client
 from gateways.telegram_bot import TelegramGateway
 from gateways.http_api import HttpGateway
 
@@ -58,6 +58,20 @@ def main():
             print(f"Warning: Could not initialize WebMCP: {e}")
             print("Install playwright: pip install playwright && playwright install chromium")
 
+    # Initialize Lead Discovery Client
+    lead_discovery_client = None
+    if Config.LEAD_DISCOVERY_ENABLED:
+        try:
+            from core.lead_discovery import LeadDiscoveryClient
+            lead_discovery_client = LeadDiscoveryClient(
+                dashboard_url=Config.LEAD_DISCOVERY_URL,
+                timeout=Config.LEAD_DISCOVERY_TIMEOUT
+            )
+            set_lead_discovery_client(lead_discovery_client)
+            print(f"Lead Discovery Client initialized (dashboard: {Config.LEAD_DISCOVERY_URL}).")
+        except Exception as e:
+            print(f"Warning: Could not initialize Lead Discovery: {e}")
+
     # System instruction for the AI agent
     # Detect user environment
     user_home = os.path.expanduser("~")
@@ -85,12 +99,19 @@ def main():
         "- Memory: Use save_memory and memory_search for remembering things\n"
         "- WebMCP: Use webmcp_discover_tools to find what actions a website supports natively\n"
         "- WebMCP: Use webmcp_execute_tool to execute a discovered action on a website\n"
-        "- WebMCP: Use webmcp_list_cached_tools to see previously discovered website tools\n\n"
+        "- WebMCP: Use webmcp_list_cached_tools to see previously discovered website tools\n"
+        "- Leads: Use lead_discovery_search to find B2B leads (startups, companies, contacts)\n"
+        "- Leads: Use lead_discovery_open_dashboard to open the Lead Discovery web UI\n\n"
         "WEBMCP WORKFLOW:\n"
         "When a user asks you to interact with a website (e.g. book, search, fill a form):\n"
         "1. First call webmcp_discover_tools(url) to see what the site offers\n"
         "2. If tools are found, use webmcp_execute_tool(url, tool_name, args) to act\n"
         "3. If no WebMCP tools, fall back to open_website() or run_command()\n\n"
+        "LEAD DISCOVERY WORKFLOW:\n"
+        "When a user asks about companies, leads, startups, contacts, or B2B research:\n"
+        "1. Use lead_discovery_search(query) — it takes 2-5 minutes for full analysis\n"
+        "2. The tool returns company info, key people, verified contacts, and lead scores\n"
+        "3. Use lead_discovery_open_dashboard() to show the visual UI for demo\n\n"
         "EXAMPLES:\n"
         '- "Play Ninja Hattori on YouTube" -> use play_on_youtube("Ninja Hattori")\n'
         '- "Play Night Changes on Spotify" -> use play_on_spotify("Night Changes")\n'
@@ -103,6 +124,8 @@ def main():
         '- "Send WhatsApp to Mom saying Hello" -> use send_whatsapp_message("Mom", "Hello")\n'
         '- "Send WhatsApp to +919999999999 saying Hello" -> use send_whatsapp_message("+919999999999", "Hello")\n'
         '- "Open Notepad" -> use open_application("notepad")\n'
+        '- "Find startups in Bangalore" -> use lead_discovery_search("startups in Bangalore")\n'
+        '- "Show lead dashboard" -> use lead_discovery_open_dashboard()\n'
     )
 
     ollama_client = OllamaClient(Config.OLLAMA_BASE_URL, model_name=args.model, system_instruction=system_instruction)
@@ -146,6 +169,9 @@ def main():
         if webmcp_client:
             webmcp_client.close()
             print("WebMCP Client closed.")
+        if lead_discovery_client:
+            lead_discovery_client.close()
+            print("Lead Discovery Client closed.")
         for gateway in gateways:
             gateway.stop()
         if Config.SCHEDULER_ENABLED:

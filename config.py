@@ -37,6 +37,11 @@ class Config:
     WEBMCP_TIMEOUT = int(os.getenv("WEBMCP_TIMEOUT", 30))  # seconds per page load
     WEBMCP_HEADLESS = os.getenv("WEBMCP_HEADLESS", "true").lower() == "true"
 
+    # Lead Discovery Configuration
+    LEAD_DISCOVERY_URL = os.getenv("LEAD_DISCOVERY_URL", "https://agent-three-eta.vercel.app")
+    LEAD_DISCOVERY_TIMEOUT = int(os.getenv("LEAD_DISCOVERY_TIMEOUT", 300))  # 5 min
+    LEAD_DISCOVERY_ENABLED = os.getenv("LEAD_DISCOVERY_ENABLED", "true").lower() == "true"
+
     @classmethod
     def validate(cls):
         if not cls.GOOGLE_API_KEY:
