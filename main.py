@@ -8,7 +8,7 @@ from core.ollama_client import OllamaClient
 from core.memory import MemoryStore
 from core.agent import GeminiAgent
 from core.scheduler import Scheduler
-from core.tools import set_memory_store
+from core.tools import set_memory_store, set_webmcp_client
 from gateways.telegram_bot import TelegramGateway
 from gateways.http_api import HttpGateway
 
@@ -43,6 +43,21 @@ def main():
         print(f"Warning: Could not initialize Memory Store: {e}")
         memory_store = None
 
+    # Initialize WebMCP Client
+    webmcp_client = None
+    if Config.WEBMCP_ENABLED:
+        try:
+            from core.webmcp import WebMCPClient
+            webmcp_client = WebMCPClient(
+                headless=Config.WEBMCP_HEADLESS,
+                timeout=Config.WEBMCP_TIMEOUT
+            )
+            set_webmcp_client(webmcp_client)
+            print("WebMCP Client initialized (browser launches on first use).")
+        except Exception as e:
+            print(f"Warning: Could not initialize WebMCP: {e}")
+            print("Install playwright: pip install playwright && playwright install chromium")
+
     # System instruction for the AI agent
     # Detect user environment
     user_home = os.path.expanduser("~")
@@ -67,7 +82,15 @@ def main():
         "- WhatsApp: Use send_whatsapp_message to send messages via WhatsApp Desktop (requires app installed & logged in)\n"
         "- System: Use system_control for volume, brightness, screenshot, lock, shutdown, restart, sleep\n"
         "- Info: Use get_system_info for battery, IP, disk space, WiFi, processes, uptime\n"
-        "- Memory: Use save_memory and memory_search for remembering things\n\n"
+        "- Memory: Use save_memory and memory_search for remembering things\n"
+        "- WebMCP: Use webmcp_discover_tools to find what actions a website supports natively\n"
+        "- WebMCP: Use webmcp_execute_tool to execute a discovered action on a website\n"
+        "- WebMCP: Use webmcp_list_cached_tools to see previously discovered website tools\n\n"
+        "WEBMCP WORKFLOW:\n"
+        "When a user asks you to interact with a website (e.g. book, search, fill a form):\n"
+        "1. First call webmcp_discover_tools(url) to see what the site offers\n"
+        "2. If tools are found, use webmcp_execute_tool(url, tool_name, args) to act\n"
+        "3. If no WebMCP tools, fall back to open_website() or run_command()\n\n"
         "EXAMPLES:\n"
         '- "Play Ninja Hattori on YouTube" -> use play_on_youtube("Ninja Hattori")\n'
         '- "Play Night Changes on Spotify" -> use play_on_spotify("Night Changes")\n'
@@ -120,6 +143,9 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         print("\nStopping Gemini Gateway...")
+        if webmcp_client:
+            webmcp_client.close()
+            print("WebMCP Client closed.")
         for gateway in gateways:
             gateway.stop()
         if Config.SCHEDULER_ENABLED:

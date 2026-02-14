@@ -479,3 +479,127 @@ def get_system_info(info_type: str) -> str:
             
     except Exception as e:
         return f"Error getting system info: {e}"
+
+
+# ==================== WEBMCP TOOLS ====================
+
+# Global WebMCP client instance (injected from main.py)
+_webmcp_client = None
+
+def set_webmcp_client(client):
+    global _webmcp_client
+    _webmcp_client = client
+
+
+@registry.register
+def webmcp_discover_tools(url: str) -> str:
+    """
+    Discovers WebMCP tools available on a webpage. WebMCP lets websites expose
+    structured actions (like booking, searching, form submission) that AI agents
+    can call directly instead of guessing the UI.
+
+    Use this when the user asks you to interact with a specific website, 
+    or to find out what actions a website supports.
+
+    Args:
+        url: The full URL of the webpage to scan for WebMCP tools, e.g. 'https://example.com'
+    """
+    if not _webmcp_client:
+        return "WebMCP is not enabled. Set WEBMCP_ENABLED=true in .env and install playwright."
+    
+    try:
+        import json
+        result = _webmcp_client.discover_tools(url)
+        
+        if result.get('error'):
+            return f"Error discovering tools on {url}: {result['error']}"
+        
+        if not result.get('hasWebMCP'):
+            return (
+                f"No WebMCP tools found on '{result.get('title', url)}'.\n"
+                f"This website hasn't implemented WebMCP yet. "
+                f"You can still interact with it using open_website() or run_command()."
+            )
+        
+        # Format tools for the agent
+        tools_info = []
+        for tool in result.get('tools', []):
+            info = f"- {tool['name']}: {tool['description']}"
+            if tool.get('parameters'):
+                info += f"\n  Parameters: {json.dumps(tool['parameters'], indent=2)}"
+            tools_info.append(info)
+        
+        return (
+            f"Found {result['toolCount']} WebMCP tool(s) on '{result.get('title', url)}':\n\n"
+            + "\n".join(tools_info)
+            + "\n\nUse webmcp_execute_tool() to call any of these tools."
+        )
+    except Exception as e:
+        return f"Error discovering WebMCP tools: {e}"
+
+
+@registry.register
+def webmcp_execute_tool(url: str, tool_name: str, arguments: str = "{}") -> str:
+    """
+    Executes a WebMCP tool on a webpage. First use webmcp_discover_tools() to find
+    available tools, then call this to execute one.
+
+    Args:
+        url: The URL of the webpage containing the tool.
+        tool_name: The name of the WebMCP tool to execute (from discover results).
+        arguments: A JSON string of arguments to pass, e.g. '{"query": "flights to NYC"}'
+    """
+    if not _webmcp_client:
+        return "WebMCP is not enabled. Set WEBMCP_ENABLED=true in .env and install playwright."
+    
+    try:
+        import json
+        args_dict = json.loads(arguments) if isinstance(arguments, str) else arguments
+        
+        result = _webmcp_client.execute_tool(url, tool_name, args_dict)
+        
+        if result.get('success'):
+            return (
+                f"Successfully executed WebMCP tool '{tool_name}' on {url}.\n"
+                f"Source: {result.get('source', 'unknown')}\n"
+                f"Result: {json.dumps(result.get('result', ''), indent=2)}"
+            )
+        else:
+            return (
+                f"Failed to execute WebMCP tool '{tool_name}' on {url}.\n"
+                f"Error: {result.get('error', 'Unknown error')}"
+            )
+    except json.JSONDecodeError:
+        return f"Invalid JSON in arguments: {arguments}. Must be a valid JSON string."
+    except Exception as e:
+        return f"Error executing WebMCP tool: {e}"
+
+
+@registry.register
+def webmcp_list_cached_tools() -> str:
+    """
+    Lists all previously discovered WebMCP tools from cache.
+    Use this to see what websites and tools have already been discovered
+    without needing to re-scan pages.
+    """
+    if not _webmcp_client:
+        return "WebMCP is not enabled."
+    
+    try:
+        import json
+        cached = _webmcp_client.get_cached_tools()
+        
+        if not cached:
+            return "No WebMCP tools have been discovered yet. Use webmcp_discover_tools(url) to scan a website."
+        
+        lines = ["Previously discovered WebMCP tools:\n"]
+        for url, data in cached.items():
+            lines.append(f"📌 {data.get('title', url)} ({url})")
+            lines.append(f"   Tools ({data['toolCount']}):")
+            for tool in data.get('tools', []):
+                lines.append(f"   - {tool['name']}: {tool['description']}")
+            lines.append("")
+        
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error listing cached tools: {e}"

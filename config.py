@@ -32,6 +32,11 @@ class Config:
     # Scheduler
     SCHEDULER_ENABLED = os.getenv("SCHEDULER_ENABLED", "true").lower() == "true"
 
+    # WebMCP Configuration
+    WEBMCP_ENABLED = os.getenv("WEBMCP_ENABLED", "true").lower() == "true"
+    WEBMCP_TIMEOUT = int(os.getenv("WEBMCP_TIMEOUT", 30))  # seconds per page load
+    WEBMCP_HEADLESS = os.getenv("WEBMCP_HEADLESS", "true").lower() == "true"
+
     @classmethod
     def validate(cls):
         if not cls.GOOGLE_API_KEY:

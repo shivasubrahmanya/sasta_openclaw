@@ -5,3 +5,4 @@ flask
 python-dotenv
 pydantic
 schedule
+playwright
